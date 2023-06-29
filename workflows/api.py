@@ -1,46 +1,45 @@
-import requests 
-import pandas as pandas
-
-#API
+import requests
 
 def get_info(player_name):
-    url = f"https://www.balldontlie.io/api/v1/players/{player_name}"
-    
-    data = {
-        "id":237,
-        "first_name":"LeBron",
-         "last_name":"James",
-         "position":"F",
-         "height_feet": 6,
-         "height_inches": 8,
-         "weight_pounds": 250,
-        "team":{
-            "id":14,
-            "abbreviation":"LAL",
-            "city":"Los Angeles",
-            "conference":"West",
-            "division":"Pacific",
-            "full_name":"Los Angeles Lakers",
-            "name":"Lakers"
-        }
+    url = f"https://www.balldontlie.io/api/v1/players"
+
+    params = {
+        "search": player_name
     }
 
-    response = requests.get(url,params=data)
-    data = response.json()
+    response = requests.get(url, params=params)
 
-    name = 'Full Name: ' + data["first_name"] + ' ' + data["last_name"]
-   
-    return name
+    if response.status_code == 200:
+        data = response.json()
+
+        if data["data"]:
+            player_data = data["data"][0]
+            full_name = player_data["first_name"] + " " + player_data["last_name"]
+
+            player_info = {
+                "Full Name": full_name,
+                "Team": player_data["team"]["full_name"]
+            }
+
+            return player_info
+        else:
+            return None
+    else:
+        print("Error:", response.status_code)
+        return None
 
 
 def main():
-    player_name = input('Enter a MLB player ID: ')
-    player = get_info(player_name)
+    player_name = input("Enter a player name: ")
+    player_info = get_info(player_name)
 
-    if player is not None:
-        print(player)
+    if player_info is not None:
+        print("Player Information:")
+        for key, value in player_info.items():
+            print(f"{key}: {value}")
     else:
-        print('Player not found')
+        print("Player not found")
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()
