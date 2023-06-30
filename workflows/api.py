@@ -2,7 +2,8 @@ import requests
 import pandas as pd
 import sqlite3
 import os
-from random import randint
+
+DB_FILE = "player.db"
 
 # Function to create the player_info table
 def create_table(connection):
@@ -11,40 +12,36 @@ def create_table(connection):
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         full_name TEXT,
         team TEXT,
-        date TEXT,
-        points INTEGER,
-        rebounds INTEGER,
-        assists INTEGER,
+        season INTEGER,
         steals INTEGER,
-        blocks INTEGER
+        blocks INTEGER,
+        rebounds INTEGER,
+        points INTEGER
     );
     """
-    cursor = connection.cursor()  # Create a cursor object
-    cursor.execute(query)  # Execute the query using the cursor
+    connection.execute(query)
 
+# Function to insert player information into the player_info table
 # Function to insert player information into the player_info table
 def insert_player_info(connection, player_info):
     query = """
-    INSERT INTO player_info (full_name, team, date, points, rebounds, assists, steals, blocks)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO player_info(full_name, team, season, steals, blocks, rebounds, points)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
     """
-    params = (
-        player_info["full_name"],
-        player_info["team"],
-        player_info["date"],
-        player_info["points"],
-        player_info["rebounds"],
-        player_info["assists"],
-        player_info["steals"],
-        player_info["blocks"]
+    values = (
+        player_info["Full Name"],
+        player_info["Team"],
+        player_info["Season Year"],
+        player_info["Steals"],
+        player_info["Blocks"],
+        player_info["Rebounds"],
+        player_info["Points"]
     )
-    cursor = connection.cursor()  # Create a cursor object
-    cursor.execute(query, params)  # Execute the query with parameters using the cursor
-    connection.commit()
+    connection.execute(query, values)
 
 # Function to print player information from the player_info table
 def print_player_info(connection):
-    query = "SELECT full_name, team, date, points, rebounds, assists, steals, blocks FROM player_info;"
+    query = "SELECT full_name, team, steals, blocks, rebounds, points, season FROM player_info"
     df = pd.read_sql(query, con=connection)
 
     if not df.empty:
@@ -53,71 +50,75 @@ def print_player_info(connection):
     else:
         print("No player information found.")
 
-# API function to get player information and game stats
-def get_info(player_name):
-    url = "https://www.balldontlie.io/api/v1/players"
+def get_info(player_name, season):
+    players_url = f"https://www.balldontlie.io/api/v1/players"
+    response = requests.get(players_url, params={"search": player_name})
+    data = response.json()
 
-    params = {
-        "search": player_name,
-        "per_page": 1,  # Retrieve only one player
+    if len(data["data"]) == 0:
+        return None
+
+    player_data = data["data"][0]
+    full_name = player_data["first_name"] + " " + player_data["last_name"]
+    team = player_data["team"]["full_name"]
+    player_id = player_data["id"]
+
+    stats_url = f"https://www.balldontlie.io/api/v1/season_averages"
+    stats_response = requests.get(stats_url, params={"player_ids[]": player_id, "season": season})
+    stats_data = stats_response.json()
+
+    if len(stats_data["data"]) == 0:
+        return None
+
+    player_stats = stats_data["data"][0]
+
+    stats = {
+        "Full Name": full_name,
+        "Team": team,
+        "Steals": player_stats.get("stl", 0),
+        "Blocks": player_stats.get("blk", 0),
+        "Rebounds": player_stats.get("reb", 0),
+        "Points": player_stats.get("pts", 0),
+        "Season Year": season
     }
 
-    response = requests.get(url, params=params)
+    return stats
 
-    if response.status_code == 200:
-        data = response.json()
-
-        if data["data"]:
-            player_data = data["data"][0]
-            player_id = player_data["id"]
-            player_team = player_data["team"]["full_name"]
-            full_name = player_data["first_name"] + " " + player_data["last_name"]
-
-            game_date = f"2023-{randint(1, 12):02d}-{randint(1, 28):02d}T00:00:00.000Z"
-            points = randint(0, 50)
-            rebounds = randint(0, 15)
-            assists = randint(0, 10)
-            steals = randint(0, 5)
-            blocks = randint(0, 5)
-
-            player_info = {
-                "full_name": full_name,
-                "team": player_team,
-                "date": game_date,
-                "points": points,
-                "rebounds": rebounds,
-                "assists": assists,
-                "steals": steals,
-                "blocks": blocks
-            }
-
-            return player_info
-
-        return None
-    else:
-        print("Error:", response.status_code)
-        return None
 
 def main():
+    # Create the database file if it doesn't exist
+    if not os.path.exists(DB_FILE):
+        open(DB_FILE, "w").close()
+
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        create_table(conn)
+    except sqlite3.Error as e:
+        print(f"Database connection error: {e}")
+        return
+
     while True:
-        player_name = input("Enter a player name: ")
-        player_info = get_info(player_name)
-
-        if player_info is not None:
-            current_dir = os.getcwd()
-            db_file = os.path.join(current_dir, "player.db")
-            conn = sqlite3.connect(db_file)
-            create_table(conn)
-            insert_player_info(conn, player_info)
-            print("Player information inserted into the database.")
-            print_player_info(conn)
-            conn.close()
-        else:
-            print("Player not found")
-
-        choice = input("Do you want to continue? (y/n): ")
-        if choice.lower() != 'y':
+        player_name = input('Enter a player name (or "quit" to exit): ')
+        if player_name.lower() == "quit":
             break
 
-if __name__ == "__main__":
+        season = input("Enter the season year: ")
+        if season.lower() == "quit":
+            break
+
+        player_stats = get_info(player_name, season)
+
+        if player_stats is not None:
+            try:
+                insert_player_info(conn, player_stats)
+                print("Player information inserted into the database.")
+                print_player_info(conn)
+            except sqlite3.Error as e:
+                print(f"Error inserting player information: {e}")
+        else:
+            print('Player not found')
+
+    conn.close()
+
+if __name__ == '__main__':
     main()
