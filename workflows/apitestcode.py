@@ -7,7 +7,7 @@ DB_FILE = "player.db"
 
 # Function to create the player_info table
 def create_table(connection):
-    query = """
+  query = """
     CREATE TABLE IF NOT EXISTS player_info (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         full_name TEXT,
@@ -20,6 +20,7 @@ def create_table(connection):
     );
     """
     connection.execute(query)
+
 
 # Function to insert player information into the player_info table
 def insert_player_info(connection, player_info):

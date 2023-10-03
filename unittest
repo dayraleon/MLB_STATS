@@ -1,0 +1,101 @@
+import unittest
+import sqlite3
+from unittest import patch
+from player import create_table, insert_player_info, print_player_info, get_info
+
+class PlayerTestCase(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        # Create an in-memory SQLite database for testing
+        cls.conn = sqlite3.connect(":memory:")
+        create_table(cls.conn)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.conn.close()
+
+    def setUp(self):
+        # Insert sample player information into the database for testing
+        self.sample_player_info = {
+            "Full Name": "LeBron James",
+            "Team": "Los Angeles Lakers",
+            "Season Year": 2022,
+            "Steals": 1,
+            "Blocks": 2,
+            "Rebounds": 5,
+            "Points": 20
+        }
+        insert_player_info(self.conn, self.sample_player_info)
+
+    def tearDown(self):
+        # Clear the player_info table after each test
+        self.conn.execute("DELETE FROM player_info")
+        self.conn.commit()
+
+    def test_get_info_with_valid_player(self):
+        player_name = "LeBron James"
+        season = 2022
+
+        # Mock the response from the API
+        with patch("player.requests.get") as mock_get:
+            mock_response = mock_get.return_value
+            mock_response.json.return_value = {
+                "data": [
+                    {
+                        "first_name": "LeBron",
+                        "last_name": "James",
+                        "team": {"full_name": "Los Angeles Lakers"},
+                        "id": 1
+                    }
+                ]
+            }
+
+            # Mock the response from the season_averages API
+            mock_response.json.return_value = {
+                "data": [
+                    {
+                        "stl": 1,
+                        "blk": 2,
+                        "reb": 5,
+                        "pts": 20
+                    }
+                ]
+            }
+
+            # Call the function and assert the result
+            result = get_info(player_name, season)
+            self.assertEqual(result, self.sample_player_info)
+
+    def test_get_info_with_invalid_player(self):
+        player_name = "Invalid Player"
+        season = 2022
+
+        # Mock the response from the API
+        with patch("player.requests.get") as mock_get:
+            mock_response = mock_get.return_value
+            mock_response.json.return_value = {
+                "data": []
+            }
+
+            result = get_info(player_name, season)
+            self.assertIsNone(result)
+
+    def test_print_player_info(self):
+        # Redirect the standard output to capture the printed output
+        import sys
+        from io import StringIO
+        stdout = sys.stdout
+        sys.stdout = StringIO()
+
+        # Call the function
+        print_player_info(self.conn)
+
+        # Get the printed output and restore the standard output
+        printed_output = sys.stdout.getvalue().strip()
+        sys.stdout = stdout
+
+        expected_output = "Player Information:\nFull Name | Team                | Steals | Blocks | Rebounds | Points | Season\n----------------------------------------------------------------------------------\nLeBron James | Los Angeles Lakers | 1      | 2      | 5        | 20     | 2022"
+        self.assertEqual(printed_output, expected_output)
+
+if __name__ == '__main__':
+    unittest.main()
